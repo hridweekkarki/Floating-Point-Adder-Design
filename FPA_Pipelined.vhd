@@ -40,6 +40,20 @@ port(
 	CLK: in std_logic;
 	RST: in std_logic;
 	EN: in std_logic;
+	Man: in std_logic_vector(25 downto 0);
+	Sign: in std_logic;
+	LExp: in std_logic_vector(7 downto 0);
+	QMan: out std_logic_vector(25 downto 0);
+	QSign: out std_logic;
+	QLExp: out std_logic_vector(7 downto 0)
+);
+end component;
+
+component PipelineReg3 is
+port(
+	CLK: in std_logic;
+	RST: in std_logic;
+	EN: in std_logic;
 	OP_I: in std_logic_vector(31 downto 0);
 	OP_O: out std_logic_vector(31 downto 0)
 );
@@ -119,6 +133,16 @@ component ExpAlign is
 	     Exp_Out: out std_logic_vector(7 downto 0)
 	);
 end component;
+
+component ControlUnit is 
+port(   LSign: in std_logic;
+	SSign: in std_logic;
+	LMan: in std_logic_vector(25 downto 0);
+	SMan: in std_logic_vector(25 downto 0);
+	MUXSel: out std_logic;
+	ALUSel: out std_logic
+);
+end component;
 --SIGNALS
 
 signal SALU_A: std_logic_vector(7 downto 0);
@@ -144,30 +168,30 @@ signal sQALU_Sel: std_logic;
 signal sQSign: std_logic;
 signal QSign: std_logic;
 signal sQLExp: std_logic_vector(7 downto 0);
+signal FMan: std_logic_vector(25 downto 0);
+signal FSign: std_logic;
+signal FExp: std_logic_vector(7 downto 0);
 
 signal sOP_Q: std_logic_vector(31 downto 0);
 
 begin
-
-BigALU_Sel <= '0' when (OP_A(31) = OP_B(31)) else
-	      '1';   
+ 
 ExpComparator: Comparator port map(OP_A, OP_B, LSign, SSign, L_Man, Man_S25, SALU_A, SALU_B);
 Exponent_Difference: Small_ALU port map(SALU_A, SALU_B, Shift_Dist);
 RightShifter: ShiftRight port map(Shift_Dist, Man_S25, S_Man);
-LMUX_Sel <= '0' when (LSign = SSign) else
-	    '0' when (L_Man > S_Man) else
-	    '1';
+Control: ControlUnit port map(LSign, SSign, L_Man, S_Man, LMUX_Sel, BigALU_Sel);
 SMUX_Sel <= NOT(LMUX_Sel);
 Large_MUX: MUX_26 port map(L_Man, S_Man, LMUX_Sel, ManL2);
 Small_MUX: MUX_26 port map(L_Man, S_Man, SMUX_Sel, ManS2);
 MUX1_Sign: MUX_1bit port map(LSign, SSign, LMUX_Sel, QSign);
 RegisterPipeline_1: PipelineReg1 port map(Clk, RST, EN, ManL2, ManS2, BigALU_Sel, QSign, SALU_A, sQMan1, sQMan2, sQALU_Sel, sQSign, sQLExp); 
 Mantissa_Addition: Big_ALU port map(sQMan1, sQMan2, sQALU_Sel, Man_Q);
-Leading_One_Detector: LOD port map(Man_Q, ExpCorrector, Shift_Dist2, Man_Q2);
-Exponent_Alignment: ExpAlign port map(sQLExp, ExpCorrector, sOP_Q(30 downto 23));
+RegisterPipeline_2: PipelineReg2 port map(Clk, RST, EN, Man_Q, sQSign, sQLExp, FMan, FSign, FExp);
+Leading_One_Detector: LOD port map(FMan, ExpCorrector, Shift_Dist2, Man_Q2);
+Exponent_Alignment: ExpAlign port map(FExp, ExpCorrector, sOP_Q(30 downto 23));
 LeftShifter: ShiftLeft port map(Shift_Dist2, Man_Q2, sOP_Q(22 downto 0));
-sOP_Q(31) <= sQSign;
-RegisterPipeline_2: PipelineReg2 port map(Clk, RST, EN, sOP_Q, OP_Q);
+sOP_Q(31) <= FSign;
+RegisterPipeline_3: PipelineReg3 port map(Clk, RST, EN, sOP_Q, OP_Q);
 
  
 end structural;
